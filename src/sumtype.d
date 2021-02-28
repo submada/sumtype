@@ -1375,8 +1375,8 @@ template match(handlers...)
 	 * Params:
 	 *   args = One or more [SumType] objects.
 	 */
-	auto ref match(Args...)(auto ref Args args)
-		if (args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
+	auto ref match(SumTypes...)(auto ref SumTypes args)
+		if (args.length > 0 && anySatisfy!(isSumType, SumTypes)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
 		return matchImpl!(Yes.exhaustive, handlers)(args);
 	}
@@ -1513,8 +1513,8 @@ template tryMatch(handlers...)
 	 * Params:
 	 *   args = One or more [SumType] objects.
 	 */
-	auto ref tryMatch(Args...)(auto ref Args args)
-		if (args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
+	auto ref tryMatch(SumTypes...)(auto ref SumTypes args)
+		if (args.length > 0 && anySatisfy!(isSumType, SumTypes)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
 		return matchImpl!(No.exhaustive, handlers)(args);
 	}
@@ -1614,15 +1614,9 @@ private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 {
     import std.meta : Filter;
 
-	auto matchImpl(Args...)(auto ref Args all_args)
-		if (all_args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
+	auto matchImpl(SumTypes...)(auto ref SumTypes args)
+		if (args.length > 0 && anySatisfy!(isSumType, SumTypes)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
-        static if(!allSatisfy!(isSumType, Args))
-            pragma(msg, Args);
-
-        alias SumTypes = Args;  //Filter!(isSumType, Args);
-        alias args = all_args;  //Filter!(hasSumType, all_args);
-
 		//enum typeCount(SumType) = SumType.Types.length;
         template typeCount(SumType){
             static if(isSumType!SumType)
@@ -1713,14 +1707,13 @@ private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 		{
 			enum tags = TagTuple.fromCaseId(caseId);
 			enum argsFrom(size_t i: tags.length) = "";
-            /+enum argsFrom(size_t i) = "args[" ~ toCtString!i ~ "].get!(SumTypes[" ~ toCtString!i ~ "]" ~
-                ".Types[" ~ toCtString!(tags[i]) ~ "])(), " ~ argsFrom!(i + 1);+/
             template argsFrom(size_t i){
                 static if(isSumType!(SumTypes[i])){
                     enum argsFrom = "args[" ~ toCtString!i ~ "].get!(SumTypes[" ~ toCtString!i ~ "]" ~
                                     ".Types[" ~ toCtString!(tags[i]) ~ "])(), " ~ argsFrom!(i + 1);
                 }
                 else{
+                    static assert(tags[i] == 0);
                     enum argsFrom = "args[" ~ toCtString!i ~ "], " ~ argsFrom!(i + 1);
                 }
 
