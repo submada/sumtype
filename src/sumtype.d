@@ -1314,6 +1314,7 @@ private enum bool isSumTypeInstance(T) = is(T == SumType!Args, Args...);
 /// True if `T` is a [SumType] or implicitly converts to one, otherwise false.
 enum bool isSumType(T) = is(T : SumType!Args, Args...);
 
+enum bool hasSumType(alias V) = isSumType!(typeof(V));
 ///
 @safe unittest {
 	static struct ConvertsToSumType
@@ -1374,8 +1375,8 @@ template match(handlers...)
 	 * Params:
 	 *   args = One or more [SumType] objects.
 	 */
-	auto ref match(SumTypes...)(auto ref SumTypes args)
-		if (allSatisfy!(isSumType, SumTypes) && args.length > 0)
+	auto ref match(Args...)(auto ref Args args)
+		if (args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
 		return matchImpl!(Yes.exhaustive, handlers)(args);
 	}
@@ -1512,8 +1513,8 @@ template tryMatch(handlers...)
 	 * Params:
 	 *   args = One or more [SumType] objects.
 	 */
-	auto ref tryMatch(SumTypes...)(auto ref SumTypes args)
-		if (allSatisfy!(isSumType, SumTypes) && args.length > 0)
+	auto ref tryMatch(Args...)(auto ref Args args)
+		if (args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
 		return matchImpl!(No.exhaustive, handlers)(args);
 	}
@@ -1611,10 +1612,25 @@ private size_t stride(size_t dim, lengths...)()
 
 private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 {
-	auto matchImpl(SumTypes...)(auto ref SumTypes args)
-		if (allSatisfy!(isSumType, SumTypes) && args.length > 0)
+    import std.meta : Filter;
+
+	auto matchImpl(Args...)(auto ref Args all_args)
+		if (all_args.length > 0 && anySatisfy!(isSumType, Args)/+allSatisfy!(isSumType, SumTypes) && args.length > 0+/)
 	{
-		enum typeCount(SumType) = SumType.Types.length;
+        static if(!allSatisfy!(isSumType, Args))
+            pragma(msg, Args);
+
+        alias SumTypes = Args;  //Filter!(isSumType, Args);
+        alias args = all_args;  //Filter!(hasSumType, all_args);
+
+		//enum typeCount(SumType) = SumType.Types.length;
+        template typeCount(SumType){
+            static if(isSumType!SumType)
+                enum typeCount = SumType.Types.length;
+            else
+                enum typeCount = 1;
+
+        }
 		alias stride(size_t i) = .stride!(i, Map!(typeCount, SumTypes));
 
 		/* A TagTuple represents a single possible set of tags that `args`
@@ -1647,14 +1663,20 @@ private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 
 			invariant {
 				static foreach (i; 0 .. tags.length) {
-					assert(tags[i] < SumTypes[i].Types.length);
+                    static if(isSumType!(SumTypes[i]))
+					    assert(tags[i] < SumTypes[i].Types.length);
+                    else
+                        assert(tags[i] == 0);
 				}
 			}
 
 			this(ref const(SumTypes) args)
 			{
 				static foreach (i; 0 .. tags.length) {
-					tags[i] = args[i].tag;
+                    static if(isSumType!(SumTypes[i]))
+					    tags[i] = args[i].tag;
+                    else
+                        tags[i] = 0;
 				}
 			}
 
@@ -1691,8 +1713,18 @@ private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 		{
 			enum tags = TagTuple.fromCaseId(caseId);
 			enum argsFrom(size_t i: tags.length) = "";
-			enum argsFrom(size_t i) = "args[" ~ toCtString!i ~ "].get!(SumTypes[" ~ toCtString!i ~ "]" ~
-				".Types[" ~ toCtString!(tags[i]) ~ "])(), " ~ argsFrom!(i + 1);
+            /+enum argsFrom(size_t i) = "args[" ~ toCtString!i ~ "].get!(SumTypes[" ~ toCtString!i ~ "]" ~
+                ".Types[" ~ toCtString!(tags[i]) ~ "])(), " ~ argsFrom!(i + 1);+/
+            template argsFrom(size_t i){
+                static if(isSumType!(SumTypes[i])){
+                    enum argsFrom = "args[" ~ toCtString!i ~ "].get!(SumTypes[" ~ toCtString!i ~ "]" ~
+                                    ".Types[" ~ toCtString!(tags[i]) ~ "])(), " ~ argsFrom!(i + 1);
+                }
+                else{
+                    enum argsFrom = "args[" ~ toCtString!i ~ "], " ~ argsFrom!(i + 1);
+                }
+
+            }
 			enum handlerArgs = argsFrom!0;
 		}
 
@@ -1710,8 +1742,14 @@ private template matchImpl(Flag!"exhaustive" exhaustive, handlers...)
 			template getType(size_t i)
 			{
 				enum tid = tags[i];
-				alias T = SumTypes[i].Types[tid];
-				alias getType = typeof(args[i].get!T());
+
+                static if(isSumType!(SumTypes[i])){
+				    alias T = SumTypes[i].Types[tid];
+				    alias getType = typeof(args[i].get!T());
+                }
+                else{
+                    alias getType = typeof(args[i]);
+                }
 			}
 
 			alias valueTypes = Map!(getType, Iota!(tags.length));
@@ -2242,4 +2280,18 @@ private void destroyIfOwner(T)(ref T value)
 	static if (hasElaborateDestructor!T) {
 		destroy(value);
 	}
+}
+
+@safe unittest{
+    SumType!(int, float, string) st = 7;
+    int result = 0;
+
+    st.match!((x, ref result){
+        static if(is(typeof(x) == int))
+            result = x;
+        else
+            result = -1;
+    })(result);
+
+    assert(result == -7);
 }
