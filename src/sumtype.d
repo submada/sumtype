@@ -1314,7 +1314,6 @@ private enum bool isSumTypeInstance(T) = is(T == SumType!Args, Args...);
 /// True if `T` is a [SumType] or implicitly converts to one, otherwise false.
 enum bool isSumType(T) = is(T : SumType!Args, Args...);
 
-enum bool hasSumType(alias V) = isSumType!(typeof(V));
 ///
 @safe unittest {
 	static struct ConvertsToSumType
@@ -2286,5 +2285,5 @@ private void destroyIfOwner(T)(ref T value)
             result = -1;
     })(result);
 
-    assert(result == -7);
+    assert(result == 7);
 }
